@@ -29,6 +29,10 @@ import {
 } from './lib/config';
 import { downloadSnapshot, importSnapshot } from './lib/sharing';
 import { runEval, EVAL_QUESTIONS_V1, type EvalSummary } from './lib/eval';
+import { classifyQuestion, INJECTION_REFUSAL } from './lib/guard';
+import { generateSuggestions } from './lib/suggest';
+import { SAMPLES, fetchSample } from './lib/samples';
+import { trackEvent } from './lib/analytics';
 
 export interface SourceMeta {
   id: string;
@@ -37,6 +41,8 @@ export interface SourceMeta {
   chunks: number;
   status: 'parsing' | 'embedding' | 'ready' | 'error';
   error?: string;
+  /** True for bundled demo samples (shown with a badge). */
+  sample?: boolean;
 }
 
 export interface ChatMessage {
@@ -68,9 +74,12 @@ interface AppState {
   evalRunning: boolean;
   evalResult: EvalSummary | null;
   notice: string | null;
+  suggestions: string[];
+  /** Bumped to tell the widget: expand and switch to the Chat tab. */
+  expandChatSignal: number;
 
   init: () => Promise<void>;
-  downloadModel: () => Promise<void>;
+  generateChatbot: () => Promise<void>;
   ingestFiles: (files: File[]) => Promise<void>;
   ingestUrl: (url: string) => Promise<void>;
   ingestPaste: (text: string) => Promise<void>;
@@ -83,9 +92,12 @@ interface AppState {
   exportKB: () => Promise<void>;
   importKB: (file: File) => Promise<void>;
   dismissNotice: () => void;
+  dismissSuggestions: () => void;
+  loadSample: (id: string) => Promise<void>;
 }
 
 let msgSeq = 0;
+let suggestSeq = 0; // guards against out-of-order suggestion refreshes
 
 function loadThreshold(): number {
   try {
@@ -116,6 +128,8 @@ export const useApp = create<AppState>((set, get) => ({
   evalRunning: false,
   evalResult: null,
   notice: null,
+  suggestions: [],
+  expandChatSignal: 0,
 
   init: async () => {
     if (get().initialized) return;
@@ -138,21 +152,38 @@ export const useApp = create<AppState>((set, get) => ({
         bySource.set(c.sourceId, s);
       }
       set({ sources: [...bySource.values()], totalChunks: count });
+      refreshSuggestions();
     }
   },
 
-  downloadModel: async () => {
+  generateChatbot: async () => {
     const { llmModel } = get();
-    set({ llmStatus: 'downloading', llmProgress: 0, llmProgressText: 'Starting…' });
+    trackEvent('generate-chatbot');
+    set({ llmStatus: 'downloading', llmProgress: 0, llmProgressText: 'Preparing…' });
     try {
       await ensureEngine(llmModel, (p, text) =>
         set({ llmProgress: p, llmProgressText: text }),
       );
       set({ llmStatus: 'ready', llmProgress: 100 });
+      // Greet the user once the chatbot is ready — suggestions render as
+      // chips under the composer (see Chat.tsx).
+      const totalChunks = get().totalChunks;
+      if (totalChunks > 0) {
+        set((s) => ({
+          messages: [
+            ...s.messages,
+            {
+              id: ++msgSeq,
+              role: 'assistant' as const,
+              text: '✅ Your chatbot is ready! Ask me anything about your documents — or tap one of the suggestions below.',
+            },
+          ],
+        }));
+      }
     } catch (e) {
       set({
         llmStatus: 'error',
-        notice: `Model failed to load: ${e instanceof Error ? e.message : String(e)}`,
+        notice: `Chatbot setup didn't finish: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   },
@@ -219,9 +250,9 @@ export const useApp = create<AppState>((set, get) => ({
       }
       if (allChunks.length === 0) throw new Error('No text chunks produced.');
 
-      setState({ indexLabel: 'Loading embedding model…' });
+      setState({ indexLabel: 'Preparing document understanding…' });
       await ensureEmbeddingsReady((_d, _t, label) =>
-        setState({ indexLabel: label || 'Loading embedding model…' }),
+        setState({ indexLabel: label || 'Preparing document understanding…' }),
       );
 
       setState({ indexLabel: `Embedding ${allChunks.length} chunks…` });
@@ -252,6 +283,7 @@ export const useApp = create<AppState>((set, get) => ({
           privacyMode: 'local', // network touch (if any) is over; back to on-device
         };
       });
+      refreshSuggestions();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setState((s) => ({
@@ -276,11 +308,13 @@ export const useApp = create<AppState>((set, get) => ({
       sources: s.sources.filter((src) => src.id !== id),
       totalChunks: remaining.length,
     }));
+    refreshSuggestions();
   },
 
   clearAll: async () => {
     await vectorStore.clear();
-    set({ sources: [], totalChunks: 0, messages: [], evalResult: null });
+    suggestSeq++; // invalidate any in-flight suggestion refresh
+    set({ sources: [], totalChunks: 0, messages: [], evalResult: null, suggestions: [] });
   },
 
   ask: async (question: string) => {
@@ -297,6 +331,11 @@ export const useApp = create<AppState>((set, get) => ({
     };
 
     try {
+      // Hard rule: prompt-injection attempts never reach retrieval or the LLM.
+      if (classifyQuestion(q) === 'injection') {
+        pushAssistant({ text: INJECTION_REFUSAL, noMatch: true });
+        return;
+      }
       if (totalChunks === 0) {
         pushAssistant({
           text: 'Load some documents first — drop files, add a URL, or paste text using the panel on the left.',
@@ -310,7 +349,7 @@ export const useApp = create<AppState>((set, get) => ({
       }
       if (llmStatus !== 'ready' || !isEngineReady()) {
         pushAssistant({
-          text: 'Found relevant content, but the AI model is not loaded yet. Download it from the sidebar to get answers.',
+          text: 'Found relevant content, but your chatbot isn’t generated yet. Hit “✨ Generate my chatbot” in the Sources tab to get answers.',
           citations: matches.map((m, i) => ({
             n: i + 1,
             sourceName: m.chunk.sourceName,
@@ -424,6 +463,7 @@ export const useApp = create<AppState>((set, get) => ({
           ? `Imported ${n} chunks, but the snapshot used a different embedding model (${snapshotModel}). Scores may be off until re-imported with matching embeddings.`
           : `Imported ${n} chunks.`,
       });
+      refreshSuggestions();
     } catch (e) {
       set({
         indexing: false,
@@ -434,4 +474,53 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   dismissNotice: () => set({ notice: null }),
+
+  dismissSuggestions: () => set({ suggestions: [] }),
+
+  /** Load a bundled demo sample through the normal ingest pipeline. */
+  loadSample: async (id: string) => {
+    const def = SAMPLES.find((s) => s.id === id);
+    if (!def) {
+      set({ notice: 'Unknown sample.' });
+      return;
+    }
+    // Skip if this sample is already loaded.
+    if (get().sources.some((s) => s.sample && s.name === def.sourceName)) {
+      set((s) => ({ expandChatSignal: s.expandChatSignal + 1 }));
+      return;
+    }
+    set({ indexing: true, indexLabel: `Loading ${def.title}…` });
+    try {
+      const doc = await fetchSample(def);
+      await get().ingestDocs([doc]);
+      set((s) => ({
+        sources: s.sources.map((src) =>
+          src.id === doc.sourceId ? { ...src, sample: true } : src,
+        ),
+        indexing: false,
+        indexLabel: '',
+        expandChatSignal: s.expandChatSignal + 1,
+      }));
+    } catch (e) {
+      set({
+        indexing: false,
+        indexLabel: '',
+        notice: e instanceof Error ? e.message : 'Sample failed to load.',
+      });
+    }
+  },
 }));
+
+/** Recompute suggested prompts from the current KB. Fire-and-forget. */
+function refreshSuggestions() {
+  const my = ++suggestSeq;
+  void (async () => {
+    try {
+      const chunks = await vectorStore.allChunks();
+      const s = await generateSuggestions(chunks);
+      if (my === suggestSeq) useApp.setState({ suggestions: s });
+    } catch {
+      /* suggestions are best-effort */
+    }
+  })();
+}
