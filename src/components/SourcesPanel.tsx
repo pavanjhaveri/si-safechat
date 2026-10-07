@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import { useApp } from '../state';
+import { SAMPLES } from '../lib/samples';
 import Dropzone from './Dropzone';
 import Transparency from './Transparency';
 
-/** Knowledge-base controls, model download, and backup — lives inside the chat widget. */
+/** Knowledge-base controls, chatbot setup, and backup — lives inside the chat widget. */
 export default function SourcesPanel() {
   const sources = useApp((s) => s.sources);
   const totalChunks = useApp((s) => s.totalChunks);
@@ -18,10 +19,11 @@ export default function SourcesPanel() {
   const llmStatus = useApp((s) => s.llmStatus);
   const llmProgress = useApp((s) => s.llmProgress);
   const llmProgressText = useApp((s) => s.llmProgressText);
-  const downloadModel = useApp((s) => s.downloadModel);
+  const generateChatbot = useApp((s) => s.generateChatbot);
   const webgpu = useApp((s) => s.webgpu);
   const notice = useApp((s) => s.notice);
   const dismissNotice = useApp((s) => s.dismissNotice);
+  const loadSample = useApp((s) => s.loadSample);
 
   const [url, setUrl] = useState('');
   const [paste, setPaste] = useState('');
@@ -38,15 +40,18 @@ export default function SourcesPanel() {
       )}
 
       <div className="side-section">
-        <h3>AI model</h3>
+        <h3>Your chatbot</h3>
         {llmStatus === 'ready' ? (
-          <div style={{ fontSize: 13 }}>✅ Model loaded — ready to chat.</div>
+          <div style={{ fontSize: 13 }}>✅ Your chatbot is ready — ask away.</div>
         ) : llmStatus === 'downloading' ? (
           <div className="stack">
             <div className="progress">
               <div style={{ width: `${llmProgress}%` }} />
             </div>
-            <div className="progress-label">{llmProgressText || `${llmProgress}%`}</div>
+            <div className="progress-label">✨ Generating your chatbot… {llmProgress}%</div>
+            {llmProgressText && llmProgressText !== 'Preparing…' && (
+              <div style={{ fontSize: 11, opacity: 0.65 }}>{llmProgressText}</div>
+            )}
           </div>
         ) : llmStatus === 'unsupported' ? (
           <div style={{ fontSize: 13 }}>
@@ -56,23 +61,46 @@ export default function SourcesPanel() {
           </div>
         ) : llmStatus === 'error' ? (
           <div className="stack">
-            <div style={{ fontSize: 13 }}>Model failed to load.</div>
-            <button onClick={() => void downloadModel()}>Retry download</button>
+            <div style={{ fontSize: 13 }}>Chatbot setup didn’t finish.</div>
+            <button onClick={() => void generateChatbot()}>Retry setup</button>
           </div>
         ) : (
           <div className="stack">
             <div style={{ fontSize: 13 }}>
-              Download the on-device chat model (~1GB, once — WiFi recommended).
+              Set up your on-device chatbot (one-time setup, ~1GB — WiFi
+              recommended). Your documents stay on this device.
             </div>
             <button
               className="accent"
               disabled={webgpu !== true}
-              onClick={() => void downloadModel()}
+              onClick={() => void generateChatbot()}
             >
-              Download AI model
+              ✨ Generate my chatbot
             </button>
           </div>
         )}
+      </div>
+
+      <div className="side-section">
+        <h3>Try a sample</h3>
+        <div className="stack">
+          <div style={{ fontSize: 13 }}>
+            No documents handy? Load a demo pack — same pipeline, still
+            on-device.
+          </div>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {SAMPLES.map((s) => (
+              <button
+                key={s.id}
+                disabled={indexing}
+                onClick={() => void loadSample(s.id)}
+                title={s.blurb}
+              >
+                {s.title}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="side-section">
@@ -150,6 +178,21 @@ export default function SourcesPanel() {
                 <span className="name" title={s.name}>
                   {s.name}
                 </span>
+                {s.sample && (
+                  <span
+                    className="sample-badge"
+                    title="Bundled demo content"
+                    style={{
+                      fontSize: 10,
+                      border: '1px solid var(--line)',
+                      borderRadius: 999,
+                      padding: '1px 8px',
+                      color: 'var(--muted)',
+                    }}
+                  >
+                    SAMPLE
+                  </span>
+                )}
                 <span className="meta">
                   {s.status === 'ready' ? `${s.chunks} chunks` : s.status}
                 </span>
