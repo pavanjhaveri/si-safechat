@@ -26,7 +26,7 @@ async function ensureExtractor(onProgress: (p: number, t: string) => void) {
       if (info.status === 'progress' && typeof info.progress === 'number') {
         onProgress(
           Math.round((info.progress as number) * 100),
-          `Downloading embedding model… ${Math.round((info.progress as number) * 100)}%`,
+          `Setting up document understanding… ${Math.round((info.progress as number) * 100)}%`,
         );
       } else if (typeof info.status === 'string') {
         onProgress(-1, String(info.status));
