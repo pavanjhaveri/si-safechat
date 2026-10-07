@@ -7,6 +7,8 @@ export default function Chat() {
   const ask = useApp((s) => s.ask);
   const totalChunks = useApp((s) => s.totalChunks);
   const llmStatus = useApp((s) => s.llmStatus);
+  const suggestions = useApp((s) => s.suggestions);
+  const dismissSuggestions = useApp((s) => s.dismissSuggestions);
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -33,8 +35,8 @@ export default function Chat() {
               </p>
             ) : llmStatus !== 'ready' ? (
               <p>
-                {totalChunks} chunks indexed. Download the AI model from the Sources
-                tab to start getting answers.
+                {totalChunks} chunks indexed. Generate your chatbot from the
+                Sources tab to start getting answers.
               </p>
             ) : (
               <p>
@@ -68,6 +70,31 @@ export default function Chat() {
         <div ref={bottomRef} />
       </div>
       <div className="composer">
+        {suggestions.length > 0 && !busy && (
+          <div className="suggest-row">
+            <div className="suggest-chips">
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  className="suggest-chip"
+                  title={s}
+                  onClick={() => {
+                    void ask(s);
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <button
+              className="suggest-x"
+              onClick={dismissSuggestions}
+              aria-label="Dismiss suggestions"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <div className="row">
           <input
             type="text"
