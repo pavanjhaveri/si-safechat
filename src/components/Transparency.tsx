@@ -50,6 +50,12 @@ export default function Transparency() {
           <dd>{llmModel} (WebGPU)</dd>
           <dt>Privacy mode</dt>
           <dd>{privacyMode.toUpperCase()}</dd>
+          <dt>Analytics</dt>
+          <dd>
+            GoatCounter: anonymous pageviews + a payload-free
+            “generate-chatbot” event. No cookies, no personal data, no document
+            content — ever.
+          </dd>
         </dl>
         <div>
           <label htmlFor="threshold">
