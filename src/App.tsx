@@ -7,8 +7,10 @@ import ChatWidget from './components/ChatWidget';
 export default function App() {
   const init = useApp((s) => s.init);
   const setThreshold = useApp((s) => s.setThreshold);
-  // The bot starts expanded, floating over the landing page.
-  const [widgetOpen, setWidgetOpen] = useState(true);
+  const loadSample = useApp((s) => s.loadSample);
+  // The bot starts collapsed (bubble only); it expands on user action or
+  // when a sample finishes loading.
+  const [widgetOpen, setWidgetOpen] = useState(false);
 
   useEffect(() => {
     void init();
@@ -21,9 +23,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleLoadSample = (id: string) => {
+    setWidgetOpen(true);
+    void loadSample(id);
+  };
+
   return (
     <>
-      <Landing onStartChat={() => setWidgetOpen(true)} />
+      <Landing onStartChat={() => setWidgetOpen(true)} onLoadSample={handleLoadSample} />
       <ChatWidget
         open={widgetOpen}
         onOpen={() => setWidgetOpen(true)}
