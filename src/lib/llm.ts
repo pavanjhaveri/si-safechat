@@ -1,5 +1,5 @@
 // SI SafeChat — WebGPU LLM engine via @mlc-ai/web-llm. Model weights are
-// cached in the browser Cache API after the first download. Cloud fallback
+// cached in the browser Cache API after first setup. Cloud fallback
 // (BYO API key) is PAUSED for Phase 1 — the provider interface is reserved.
 
 import { CreateMLCEngine, type MLCEngine } from '@mlc-ai/web-llm';
@@ -21,7 +21,7 @@ export function supportsWebGPU(): boolean {
   return typeof navigator !== 'undefined' && 'gpu' in navigator && !!navigator.gpu;
 }
 
-/** Download (first run) + initialize the model, with progress 0..100. */
+/** First-time setup + initialize the model, with progress 0..100. */
 export function ensureEngine(
   modelId: string = DEFAULT_LLM_MODEL,
   onProgress?: (progress: number, text: string) => void,
