@@ -50,7 +50,7 @@ function call<T>(type: 'init' | 'embed', payload: Record<string, unknown> = {}):
   });
 }
 
-/** Load the embedding model (downloads once, then cached). */
+/** Load the embedding model (one-time setup, then cached). */
 export function ensureEmbeddingsReady(onProgress?: ProgressCb): Promise<void> {
   if (!readyPromise) {
     progressCb = onProgress ?? null;
