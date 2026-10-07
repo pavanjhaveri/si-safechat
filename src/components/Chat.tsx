@@ -28,13 +28,13 @@ export default function Chat() {
             <h2>Chat with your documents</h2>
             {totalChunks === 0 ? (
               <p>
-                Add sources from the panel — drop files, paste a URL, or paste
+                Add sources from the Sources tab — drop files, paste a URL, or paste
                 text. Then ask anything answerable from them.
               </p>
             ) : llmStatus !== 'ready' ? (
               <p>
-                {totalChunks} chunks indexed. Download the AI model from the panel
-                to start getting answers.
+                {totalChunks} chunks indexed. Download the AI model from the Sources
+                tab to start getting answers.
               </p>
             ) : (
               <p>
